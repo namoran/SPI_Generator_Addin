@@ -1,0 +1,91 @@
+body {
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 16px;
+  color: #201f1e;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+header h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+h2 {
+  font-size: 15px;
+  margin: 16px 0 6px;
+}
+
+ol {
+  padding-left: 20px;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin: 14px 0 4px;
+}
+
+input[type="file"] {
+  width: 100%;
+}
+
+button {
+  margin-top: 16px;
+  padding: 8px 20px;
+  font-size: 14px;
+  background: #0f5c2e;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #a19f9d;
+  cursor: default;
+}
+
+.info {
+  color: #444;
+  margin: 6px 0 0;
+}
+
+#status {
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: 1px solid #c8c6c4;
+  background: #f3f2f1;
+}
+
+#status.error {
+  border-color: #a4262c;
+  background: #fde7e9;
+  color: #a4262c;
+}
+
+#report {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+#report li {
+  margin-bottom: 4px;
+}
+
+footer {
+  margin-top: 24px;
+  color: #605e5c;
+  font-size: 12px;
+}
+
+.hidden {
+  display: none;
+}

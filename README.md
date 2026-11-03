@@ -1,2 +1,107 @@
-# SPI_Generator_Addin
-Transfers pay item quantities from an FDEP RFC workbook into the SPI workbook open in Excel.
+# SPI Generator — Excel Add-in
+
+The SPI Generator as a Microsoft Excel add-in (Office Add-ins platform:
+a task pane web page plus a manifest, driven by the Excel JavaScript
+API). It does the same job as the web SPI Generator at
+https://namoran.github.io/SPI_Generator/ : it transfers the line items
+from a PRP change order (RFC) into an SPI workbook.
+
+The difference is where the work happens. The web tool edits a copy of
+the SPI file and hands back a download. The add-in works on the SPI
+workbook you already have open in Excel:
+
+1. Open the SPI workbook in Excel.
+2. Open the SPI Generator pane (Home tab) and select the RFC workbook.
+3. Select Generate. The RFC quantities are added into the open
+   workbook's task quantity cells, the rows that received a value are
+   unhidden, and the pane lists every change. Excel recalculates the
+   totals. Save the workbook to keep the changes.
+
+Only the task quantity cells change — the same cells the web generator
+changes. The pay item table is located from the labels printed in the
+workbook itself, so SPI versions with different layouts (Version 10.0,
+for example) work the same way they do in the web tool. If a quantity
+cell holds a formula, or a pay item from the RFC is not in the workbook,
+the add-in stops with an error and writes nothing.
+
+Nothing is uploaded. The RFC is parsed in the pane on your computer, and
+the add-in collects no data. See `src/legal/privacy.html`.
+
+## Layout
+
+| path | what it is |
+| --- | --- |
+| `manifest.xml` | production manifest; URLs point at the GitHub Pages address below |
+| `manifest.dev.xml` | the same add-in pointed at https://localhost:3000 for testing (different add-in Id) |
+| `src/taskpane/taskpane.html` / `.css` / `.js` | the pane and its Excel wiring |
+| `src/taskpane/spi-core.js` | the planning logic, ported from the web generator's `logic.js` |
+| `src/taskpane/rfc-sheetjs.js` | reads the RFC file through SheetJS |
+| `src/taskpane/xlsx.full.min.js` | SheetJS, vendored (Apache-2.0; see `SheetJS-LICENSE.txt`) |
+| `src/commands/` | the manifest's FunctionFile (no commands; the pane is the add-in) |
+| `src/legal/privacy.html`, `src/legal/terms.html` | the pages the store listing links to |
+| `assets/` | icons, made from the Moran Rocks logo |
+| `index.html` | landing page for the hosting root |
+| `tests/` | plan-equivalence test against the web generator (below) |
+| `tools/` | manifest validation and the local dev server |
+| `SUBMISSION.md` | store listing text and the submission checklist |
+
+## Testing by sideloading
+
+Sideloading loads the add-in from a manifest file, without the store.
+
+With the local server (development manifest):
+
+```sh
+npm install          # once
+npx office-addin-dev-certs install   # once; Excel requires HTTPS
+npm start            # serves this folder at https://localhost:3000
+```
+
+Then in Excel (desktop): **Insert → Add-ins → Upload My Add-in**, and
+choose `manifest.dev.xml`. The SPI Generator button appears on the Home
+tab. Open an SPI workbook, open the pane, pick an RFC, and Generate.
+
+To test the production manifest before the store listing exists, host
+this folder at the address in `manifest.xml` (next section) and sideload
+`manifest.xml` the same way.
+
+## Hosting plan
+
+The add-in's web files are static. They go in a new GitHub repository,
+`namoran/SPI_Generator_Addin`, served by GitHub Pages from the project
+root — the address `manifest.xml` already points at:
+
+```
+https://namoran.github.io/SPI_Generator_Addin/
+```
+
+Code updates deploy by pushing to that repository; every installed copy
+picks them up with no store resubmission. Only a manifest change (new
+permissions or a different structure) goes back through the store.
+`SUBMISSION.md` has the store steps.
+
+## Tests
+
+```sh
+npm test          # plan equivalence against the web generator
+npm run validate  # manifest well-formedness and submission fields
+```
+
+`npm test` runs the six real FDEP packages in
+`../handoff/packages/`. For each one it checks that the add-in core
+plans exactly the cells the web generator plans (with the RFC read both
+ways the tools read it, including through SheetJS), that the web
+generator's output for that plan matches the SPI FDEP issued, cell for
+cell across the pay item table, and that the report lines match.
+
+There is no Excel in the build environment, so the Office.js calls in
+`taskpane.js` are not covered by the automated test. The in-Excel run —
+button, pane, writes landing in a live workbook — is verified by
+sideloading, per the steps above.
+
+## Relationship to the other tools
+
+The web SPI Generator stays as it is; this project does not modify it.
+The logic port is one-way: `spi-core.js` was ported from the web tool's
+`logic.js` on 2026-11-03. If the web tool's logic changes, the port and
+this test need the same change.

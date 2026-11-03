@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPI Generator</title>
+  <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script type="text/javascript" src="xlsx.full.min.js"></script>
+  <script type="text/javascript" src="spi-core.js"></script>
+  <script type="text/javascript" src="rfc-sheetjs.js"></script>
+  <link rel="stylesheet" type="text/css" href="taskpane.css" />
+</head>
+<body>
+  <header>
+    <img src="../../assets/icon-32.png" alt="" width="32" height="32" />
+    <h1>SPI Generator</h1>
+  </header>
+  <main>
+    <p>Transfers the line items from a PRP change order (RFC) into the SPI
+      workbook open in Excel. Only the task quantity cells change; Excel
+      recalculates the totals.</p>
+    <ol>
+      <li>Open the SPI workbook in Excel.</li>
+      <li>Select the RFC workbook below.</li>
+      <li>Select Generate. The RFC quantities are added into the open
+        workbook.</li>
+    </ol>
+
+    <label for="rfc-file">RFC workbook (.xlsm)</label>
+    <input type="file" id="rfc-file" accept=".xlsm,.xlsx" />
+    <p id="rfc-info" class="info hidden"></p>
+
+    <button id="generate" type="button" disabled="disabled">Generate</button>
+
+    <div id="status" class="hidden" role="status"></div>
+
+    <div id="result" class="hidden">
+      <h2>Changes written to this workbook</h2>
+      <p id="summary"></p>
+      <ul id="report"></ul>
+      <p>Save the workbook to keep the changes.</p>
+    </div>
+  </main>
+  <footer>
+    <p>Moran Rocks LLC. The RFC file is read in Excel on this computer.
+      Nothing is uploaded.</p>
+  </footer>
+  <script type="text/javascript" src="taskpane.js"></script>
+</body>
+</html>

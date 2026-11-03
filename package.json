@@ -1,0 +1,1 @@
+{"description":"SPI Generator as an Excel Office Add-in (task pane). Transfers RFC pay item quantities into the SPI workbook open in Excel.","devDependencies":{"xlsx":"0.18.5"},"name":"spi-generator-addin","private":true,"scripts":{"start":"node tools/serve.mjs","test":"node tests/plan-equivalence.test.mjs","validate":"node tools/validate-manifest.mjs"},"version":"1.0.0"}
