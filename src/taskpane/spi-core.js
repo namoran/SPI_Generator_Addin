@@ -251,7 +251,9 @@ var SpiCore = (function () {
     colName: colName,
     missingSheetError: missingSheetError,
     RFC_SHEET: RFC_SHEET,
-    SOW_SHEET: SOW_SHEET
+    SOW_SHEET: SOW_SHEET,
+    RFC_FIRST_ROW: RFC_FIRST_ROW,
+    RFC_LAST_ROW: RFC_LAST_ROW
   };
 })();
 
