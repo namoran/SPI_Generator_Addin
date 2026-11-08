@@ -40,7 +40,10 @@
   var fileInput = document.getElementById('rfc-file');
   var rfcInfo = document.getElementById('rfc-info');
   var runBtn = document.getElementById('generate');
-  var overrideBtn = document.getElementById('override');
+  var modalEl = document.getElementById('modal');
+  var modalText = document.getElementById('modal-text');
+  var modalOverrideBtn = document.getElementById('modal-override');
+  var modalCancelBtn = document.getElementById('modal-cancel');
   var statusEl = document.getElementById('status');
   var resultEl = document.getElementById('result');
   var summaryEl = document.getElementById('summary');
@@ -91,7 +94,7 @@
     fileField.classList.toggle('hidden', sheet);
     rfcAdapter = null;
     pendingApply = null;
-    overrideBtn.classList.add('hidden');
+    closeModal();
     runBtn.disabled = sheet ? false : true; // the worksheet needs no pick to be ready
     rfcInfo.classList.add('hidden');
     rfcInfo.textContent = '';
@@ -289,13 +292,20 @@
 
   /* --- blocking (already imported) and applying --- */
 
+  function closeModal() {
+    modalEl.classList.add('hidden');
+  }
+
+  /* The refusal is a modal, not a status line: the blocker deserves the
+   * user's full attention, and the "Apply anyway" decision sits right
+   * with it. */
   function showBlocked(dates) {
-    showStatus('This RFC appears to have identical tasks, pay items, and ' +
-      'quantities to a previously imported RFC' +
-      ' (imported ' + dates.map(isoDateOnly).join(', ') + '). ' +
+    modalText.textContent = 'This RFC appears to have identical tasks, pay items, and ' +
+      'quantities to a previously imported RFC (imported ' + dates.join(', ') + '). ' +
       'Nothing was changed — the matching task quantity cells in this workbook ' +
-      'already reflect these quantities.', 'warning');
-    overrideBtn.classList.remove('hidden');
+      'already reflect these quantities.';
+    modalEl.classList.remove('hidden');
+    clearStatus();
   }
 
   function applyRfc(prep, fp, record) {
@@ -458,7 +468,7 @@
   runBtn.addEventListener('click', function () {
     runBtn.disabled = true;
     resultEl.classList.add('hidden');
-    overrideBtn.classList.add('hidden');
+    closeModal();
     pendingApply = null;
     showStatus('Checking…');
 
@@ -488,12 +498,11 @@
     });
   });
 
-  overrideBtn.addEventListener('click', function () {
+  modalOverrideBtn.addEventListener('click', function () {
     if (!pendingApply) return;
     var prep = pendingApply;
     pendingApply = null;
-    overrideBtn.classList.add('hidden');
-    runBtn.disabled = true;
+    closeModal();
     showStatus('Checking…');
     Promise.all([settingsRead(), Promise.resolve(prep)]).then(function (results) {
       var record = results[0];
@@ -505,5 +514,11 @@
       showStatus(err && err.message ? err.message : String(err), 'error');
       runBtn.disabled = false;
     });
+  });
+
+  modalCancelBtn.addEventListener('click', function () {
+    pendingApply = null;
+    closeModal();
+    clearStatus();
   });
 })();
