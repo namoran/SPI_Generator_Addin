@@ -185,16 +185,116 @@
       info: rfcInfo.textContent });
   }
 
-  /* --- the record of imports (document settings) --- */
+  /* --- the record of imports --- */
 
   function emptyRecord() {
     return { version: 1, applied: [] };
   }
 
-  /* Set when this host cannot store the import record, with the exact
-   * reason. Imports still work, but persistent duplicate-import
-   * detection is limited to a check of the workbook's settings record,
-   * and the pane says so. */
+  /* The record lives in the workbook's custom document properties,
+   * through the Excel JavaScript API — the same API that reads and
+   * writes the SPI's cells (and the one host where the panes' Office
+   * common settings object has been observed hollow: present but with
+   * no getAsync). Custom properties are invisible, persist with the
+   * workbook's save, and are part of the OOXML spec. The JSON record is
+   * chunked because Excel caps a property's value length. */
+  var REC_PREFIX = 'rfcImp';
+  var REC_CHUNK = 180;
+  var REC_MAX_ENTRIES = 15;
+  var REC_UNSUPPORTED = 'workbook custom document properties are not supported here (need ExcelApi 1.7)';
+
+  function customRecordRead(context) {
+    var coll = context.workbook.properties.custom;
+    coll.load('items/key,items/value');
+    return context.sync().then(function () {
+      var items = coll.items
+        .filter(function (p) { return p.key && p.key.indexOf(REC_PREFIX) === 0; })
+        .sort(function (a, b) {
+          return parseChunkIndex(a.key) - parseChunkIndex(b.key);
+        });
+      if (!items.length) return null;
+      var raw = items.map(function (p) { return p.value || ''; }).join('');
+      try {
+        var record = JSON.parse(raw);
+        if (!record || typeof record !== 'object' || !Array.isArray(record.applied)) return null;
+        return record;
+      } catch (e) {
+        console.log('[RFC Importer] import record in custom properties was unreadable: ' + e.message);
+        return null;
+      }
+    });
+  }
+
+  function parseChunkIndex(key) {
+    var n = parseInt(String(key).slice(REC_PREFIX.length), 10);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function customRecordWrite(context, record) {
+    var coll = context.workbook.properties.custom;
+    coll.load('items/key');
+    return context.sync().then(function () {
+      /* cap the list — keep the newest entries, the oldest drop off */
+      record.applied = record.applied.slice(-REC_MAX_ENTRIES);
+      var json = JSON.stringify(record);
+      var chunks = [];
+      for (var i = 0; i < json.length; i += REC_CHUNK) {
+        chunks.push(json.slice(i, i + REC_CHUNK));
+      }
+      coll.items
+        .filter(function (p) { return p.key && p.key.indexOf(REC_PREFIX) === 0; })
+        .forEach(function (p) { p.delete(); });
+      chunks.forEach(function (chunk, idx) {
+        coll.add(REC_PREFIX + idx, chunk);
+      });
+      return context.sync();
+    });
+  }
+
+  /* readRecord: the custom-property store first; a settings-store
+   * record (older installs) is merged in so nothing is forgotten. */
+  function readRecord() {
+    var readCustom = Excel.run(function (context) {
+      return customRecordRead(context);
+    }).catch(function (err) {
+      console.log('[RFC Importer] custom-property read failed: ' + err.message);
+      return null;
+    });
+    return Promise.all([readCustom, settingsRead()]).then(function (rs) {
+      var record = emptyRecord();
+      var seen = {};
+      [rs[0] && rs[0].applied, rs[1] && rs[1].applied].forEach(function (list) {
+        (list || []).forEach(function (e) {
+          if (!e || !e.hash) return;
+          var k = e.hash + '|' + (e.date || '');
+          if (seen[k]) return;
+          seen[k] = true;
+          record.applied.push({ hash: String(e.hash), date: String(e.date || ''),
+            source: String(e.source || ''), lines: Number(e.lines) || 0 });
+        });
+      });
+      if (record.applied.length) {
+        record.applied.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      }
+      return record;
+    });
+  }
+
+  /* writeRecord: custom properties; if the host cannot do that, the
+   * Office settings object; if that is hollow too, the session guard is
+   * what remains, and the caller is told. */
+  function writeRecord(record) {
+    return Excel.run(function (context) {
+      return customRecordWrite(context, record);
+    }).catch(function (err) {
+      console.log('[RFC Importer] custom-property write failed, falling back to settings: ' +
+        err.message);
+      return settingsWrite(record);
+    });
+  }
+
+  /* Set when a host cannot store the import record. Diagnostics only —
+   * the wording in the note comes from the write failure. */
   var recordStoreNote = null;
 
   function settingsObjects() {
@@ -335,11 +435,11 @@
       record.applied.push({
         hash: entry.hash, date: entry.date, source: entry.source, lines: entry.lines
       });
-      settingsWrite(record).catch(function (err) {
-        showStatus('Imported ' + changes.length + ' cell(s). Note: duplicate-import ' +
-          'detection for reopening and other workbooks is off in this host — ' +
-          (recordStoreNote || err.message) + '. Re-importing the same RFC is still ' +
-          'refused for the rest of this pane session.', 'warning');
+      writeRecord(record).catch(function (err) {
+        showStatus('Imported ' + changes.length + ' cell(s). Note: duplicate-import detection ' +
+          'for reopening and other workbooks is limited in this host — ' +
+          (recordStoreNote || REC_UNSUPPORTED + '; ' + err.message) + '. Re-importing the same ' +
+          'RFC is still refused for the rest of this pane session.', 'warning');
       });
     });
   }
@@ -472,16 +572,12 @@
     pendingApply = null;
     showStatus('Checking…');
 
-    Promise.all([settingsRead(), prepareRfc().catch(function (err) {
+    Promise.all([readRecord(), prepareRfc().catch(function (err) {
       return Promise.reject(err);
     })]).then(function (results) {
       var record = results[0];
       var prep = results[1];
       var fp = RfcFingerprint.fingerprint(prep.items);
-      if (recordStoreNote) {
-        showStatus('Note: duplicate-import detection is limited — ' + recordStoreNote +
-          '. The import still runs; check the quantities before relying on them.', 'warning');
-      }
       var dates = refuseDates(record, fp);
       if (dates.length) {
         pendingApply = prep;
@@ -504,7 +600,7 @@
     pendingApply = null;
     closeModal();
     showStatus('Checking…');
-    Promise.all([settingsRead(), Promise.resolve(prep)]).then(function (results) {
+    Promise.all([readRecord(), Promise.resolve(prep)]).then(function (results) {
       var record = results[0];
       var fp = RfcFingerprint.fingerprint(prep.items);
       return applyRfc(prep, fp, record);

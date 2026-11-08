@@ -32,8 +32,8 @@ workbook, the add-in stops with an error and writes nothing.
 
 The import is idempotent. Before writing anything, the add-in compares
 a fingerprint of the RFC's tasks, pay items, and quantities
-(`src/taskpane/rfc-fingerprint.js`) against the record of imports saved
-in the workbook's document settings. Identical data is refused — with
+(`src/taskpane/rfc-fingerprint.js`) against the record of imports
+saved inside the workbook itself. Identical data is refused — with
 the message and dates of every previous import — because importing the
 same RFC twice would double the quantities it carries. "Apply anyway"
 overrides the refusal deliberately (a genuinely identical change order
@@ -41,14 +41,21 @@ re-imported on purpose). The record lives in the workbook, so saving
 persists the quantities and the record together; a workbook closed
 without saving keeps neither. The fingerprint is order- and
 whitespace-insensitive, so re-entering the same lines in a different
-order still matches. On desktop Excel the record is saved when the
-workbook is saved — the same act that keeps the quantities. One
-environment has not provided the pane a settings store (observed once
-in Excel on the web); there the pane keeps the same guard in its own
-memory for the pane's lifetime — re-importing the same RFC is still
-refused until the pane is closed — and shows a note that persistent
-detection is limited. Diagnosing that host is a standing question; see
-the console (`[RFC Importer]` lines) when the note appears.
+order still matches.
+
+The record is stored in the workbook's **custom document properties**,
+through the Excel JavaScript API (`ExcelApi 1.7`) — the same API the
+add-in uses to write the SOW Units cells. The properties are invisible,
+travel with the file, and are part of the OOXML spec; the record is
+chunked across them because a property's value is capped at 255
+characters outside Excel on the web. A record in the older
+`Office.context.document.settings` store (as earlier versions wrote) is
+still read and merged in, so nothing saved by an older build is lost.
+If a host supports neither store, the pane keeps the same guard in its
+own memory for the pane's lifetime — re-importing the same RFC is still
+refused until the pane is closed — and says so in a note after the
+import. Host diagnostics appear as `[RFC Importer]` lines in the
+console.
 
 Nothing is uploaded. The RFC is read in the pane (or in the open
 workbook itself) on your computer, and the add-in collects no data.
