@@ -188,7 +188,11 @@
   /* --- the record of imports --- */
 
   function emptyRecord() {
-    return { version: 1, applied: [] };
+    return {
+      version: 1,
+      description: 'Maintained by RFC Importer. Tracks imported RFC fingerprints and complete change history.',
+      applied: []
+    };
   }
 
   /* The record lives in the workbook's custom document properties,
@@ -269,8 +273,23 @@
           var k = e.hash + '|' + (e.date || '');
           if (seen[k]) return;
           seen[k] = true;
-          record.applied.push({ hash: String(e.hash), date: String(e.date || ''),
-            source: String(e.source || ''), lines: Number(e.lines) || 0 });
+          var entry = { hash: String(e.hash), date: String(e.date || ''),
+            source: String(e.source || ''), lines: Number(e.lines) || 0 };
+          if (e.comment) entry.comment = String(e.comment);
+          if (Array.isArray(e.changes)) {
+            entry.changes = e.changes.map(function (c) {
+              return {
+                task: String(c.task || ''),
+                payItem: String(c.payItem || ''),
+                address: String(c.address || ''),
+                oldValue: Number(c.oldValue) || 0,
+                units: Number(c.units) || 0,
+                newValue: Number(c.newValue) || 0,
+                lines: Number(c.lines) || 0
+              };
+            });
+          }
+          record.applied.push(entry);
         });
       });
       if (record.applied.length) {
@@ -429,12 +448,21 @@
         hash: fp,
         date: new Date().toISOString(),
         source: prep.source,
-        lines: prep.items.length
+        lines: prep.items.length,
+        changes: changes.map(function (c) {
+          return {
+            task: c.task,
+            payItem: c.payItem,
+            address: c.address,
+            oldValue: c.oldValue,
+            units: c.units,
+            newValue: c.newValue,
+            lines: c.lines
+          };
+        })
       };
       sessionApplied.push(entry);
-      record.applied.push({
-        hash: entry.hash, date: entry.date, source: entry.source, lines: entry.lines
-      });
+      record.applied.push(entry);
       writeRecord(record).catch(function (err) {
         showStatus('Imported ' + changes.length + ' cell(s). Note: duplicate-import detection ' +
           'for reopening and other workbooks is limited in this host — ' +
