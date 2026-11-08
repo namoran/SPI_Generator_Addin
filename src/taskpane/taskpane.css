@@ -105,6 +105,12 @@ footer {
   font-size: 12px;
 }
 
+#build-note {
+  margin: 4px 0 0;
+  color: #a19f9d;
+  font-size: 11px;
+}
+
 .hidden {
   display: none;
 }
