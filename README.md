@@ -42,7 +42,13 @@ persists the quantities and the record together; a workbook closed
 without saving keeps neither. The fingerprint is order- and
 whitespace-insensitive, so re-entering the same lines in a different
 order still matches. On desktop Excel the record is saved when the
-workbook is saved — the same act that keeps the quantities.
+workbook is saved — the same act that keeps the quantities. One
+environment has not provided the pane a settings store (observed once
+in Excel on the web); there the pane keeps the same guard in its own
+memory for the pane's lifetime — re-importing the same RFC is still
+refused until the pane is closed — and shows a note that persistent
+detection is limited. Diagnosing that host is a standing question; see
+the console (`[RFC Importer]` lines) when the note appears.
 
 Nothing is uploaded. The RFC is read in the pane (or in the open
 workbook itself) on your computer, and the add-in collects no data.

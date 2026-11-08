@@ -90,6 +90,12 @@ button:disabled {
   color: #a4262c;
 }
 
+#status.warning {
+  border-color: #925800;
+  background: #fff4ce;
+  color: #3b3a39;
+}
+
 #report {
   padding-left: 18px;
   margin: 6px 0;

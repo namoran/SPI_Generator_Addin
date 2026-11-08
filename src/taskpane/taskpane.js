@@ -31,6 +31,12 @@
   var rfcAdapter = null;   // the picked RFC file, adapted
   var pendingApply = null; // an RFC blocked as already imported, waiting on "Apply anyway"
 
+  /* Fingerprints applied while this pane has been open. The settings
+   * record below persists into the workbook; this is the pane's own
+   * memory of the same imports, and the only guard when the host has
+   * no working settings store. */
+  var sessionApplied = [];
+
   var fileInput = document.getElementById('rfc-file');
   var rfcInfo = document.getElementById('rfc-info');
   var runBtn = document.getElementById('generate');
@@ -44,13 +50,13 @@
 
   Office.onReady(function (info) {
     if (info.host !== Office.HostType.Excel) {
-      showStatus('This add-in runs in Microsoft Excel.', true);
+      showStatus('This add-in runs in Microsoft Excel.', 'error');
     }
   });
 
-  function showStatus(text, isError) {
+  function showStatus(text, kind) {
     statusEl.textContent = text;
-    statusEl.className = isError ? 'error' : '';
+    statusEl.className = kind || '';
     statusEl.classList.remove('hidden');
   }
 
@@ -123,7 +129,7 @@
       rfcInfo.classList.remove('hidden');
       runBtn.disabled = false;
     }).catch(function (err) {
-      showStatus(err && err.message ? err.message : String(err), true);
+      showStatus(err && err.message ? err.message : String(err), 'error');
     });
   });
 
@@ -182,25 +188,39 @@
     return { version: 1, applied: [] };
   }
 
-  /* Set when this host cannot store the import record, with the reason.
-   * Imports still work, but duplicate-import detection is off, and the
-   * pane says so. */
+  /* Set when this host cannot store the import record, with the exact
+   * reason. Imports still work, but persistent duplicate-import
+   * detection is limited to a check of the workbook's settings record,
+   * and the pane says so. */
   var recordStoreNote = null;
+
+  function settingsObjects() {
+    var doc = null;
+    var settings = null;
+    try { doc = Office.context.document; } catch (e) { doc = null; }
+    try { settings = doc ? doc.settings : null; } catch (e) { settings = null; }
+    return { doc: doc, settings: settings };
+  }
+
+  function noStoreReason(doc, settings, need) {
+    var where = !doc ? 'no document context in this pane' :
+      !settings ? 'Excel did not give this pane a document settings object' :
+      'the document settings object has no ' + need + ' in this host';
+    console.log('[RFC Importer] no settings store: ' + where +
+      ' (document: ' + (doc ? 'present' : 'absent') +
+      ', settings: ' + (settings ? 'present' : 'absent') + ')');
+    return where;
+  }
 
   function settingsRead() {
     return new Promise(function (resolve) {
-      var settings = null;
-      try {
-        settings = Office.context.document.settings;
-      } catch (e) {
-        settings = null;
-      }
-      if (!settings || typeof settings.getAsync !== 'function') {
-        recordStoreNote = 'this host has no document settings to store the import record';
+      var objs = settingsObjects();
+      if (!objs.settings || typeof objs.settings.getAsync !== 'function') {
+        recordStoreNote = noStoreReason(objs.doc, objs.settings, 'getAsync');
         resolve(emptyRecord());
         return;
       }
-      settings.getAsync(function (ar) {
+      objs.settings.getAsync(function (ar) {
         var record = null;
         var failed = !ar || ar.status !== Office.AsyncResultStatus.Succeeded;
         if (!failed && ar.value) {
@@ -219,23 +239,18 @@
 
   function settingsWrite(record) {
     return new Promise(function (resolve, reject) {
-      var settings = null;
-      try {
-        settings = Office.context.document.settings;
-      } catch (e) {
-        settings = null;
-      }
-      if (!settings || typeof settings.setAsync !== 'function') {
-        reject(new Error(recordStoreNote || 'this host has no document settings to store the import record'));
+      var objs = settingsObjects();
+      if (!objs.settings || typeof objs.settings.setAsync !== 'function') {
+        reject(new Error(recordStoreNote || noStoreReason(objs.doc, objs.settings, 'setAsync')));
         return;
       }
-      settings.setAsync(JSON.stringify(record), function (ar) {
+      objs.settings.setAsync(JSON.stringify(record), function (ar) {
         if (!ar || ar.status !== Office.AsyncResultStatus.Succeeded) {
           reject(new Error('the import record could not be saved to this workbook: ' +
             (ar && ar.error && ar.error.message ? ar.error.message : 'unknown error')));
           return;
         }
-        settings.saveAsync(function (ar2) {
+        objs.settings.saveAsync(function (ar2) {
           if (!ar2 || ar2.status !== Office.AsyncResultStatus.Succeeded) {
             reject(new Error('the import record could not be saved to this workbook: ' +
               (ar2 && ar2.error && ar2.error.message ? ar2.error.message : 'unknown error')));
@@ -252,6 +267,22 @@
       .map(function (e) { return e.date; });
   }
 
+  /* Dates to show when refusing an import: the persisted record's dates;
+   * when the record lacks the fingerprint but this pane session applied
+   * it, the session answers instead. */
+  function refuseDates(record, fp) {
+    var parts = priorDates(record, fp).map(isoDateOnly);
+    if (!parts.length) {
+      for (var i = 0; i < sessionApplied.length; i++) {
+        if (sessionApplied[i].hash === fp) {
+          parts.push('earlier in this pane session');
+          break;
+        }
+      }
+    }
+    return parts;
+  }
+
   function isoDateOnly(iso) {
     return String(iso).slice(0, 10);
   }
@@ -263,12 +294,12 @@
       'quantities to a previously imported RFC' +
       ' (imported ' + dates.map(isoDateOnly).join(', ') + '). ' +
       'Nothing was changed — the matching task quantity cells in this workbook ' +
-      'already reflect these quantities.', true);
+      'already reflect these quantities.', 'warning');
     overrideBtn.classList.remove('hidden');
   }
 
   function applyRfc(prep, fp, record) {
-    showStatus('Importing…', false);
+    showStatus('Importing…');
     return generate(prep.rfc).then(function (changes) {
       resultEl.classList.remove('hidden');
       summaryEl.textContent = changes.length + ' cell' + (changes.length === 1 ? '' : 's') +
@@ -284,16 +315,21 @@
       rfcInfo.textContent = prep.info;
       rfcInfo.classList.remove('hidden');
 
-      record.applied.push({
+      var entry = {
         hash: fp,
         date: new Date().toISOString(),
         source: prep.source,
         lines: prep.items.length
+      };
+      sessionApplied.push(entry);
+      record.applied.push({
+        hash: entry.hash, date: entry.date, source: entry.source, lines: entry.lines
       });
       settingsWrite(record).catch(function (err) {
-        showStatus('Imported ' + changes.length + ' cell(s), but the import record ' +
-          'could not be saved to this workbook (' + err.message + '). ' +
-          'Re-importing the same RFC would not be detected.', true);
+        showStatus('Imported ' + changes.length + ' cell(s). Note: duplicate-import ' +
+          'detection for reopening and other workbooks is off in this host — ' +
+          (recordStoreNote || err.message) + '. Re-importing the same RFC is still ' +
+          'refused for the rest of this pane session.', 'warning');
       });
     });
   }
@@ -424,7 +460,7 @@
     resultEl.classList.add('hidden');
     overrideBtn.classList.add('hidden');
     pendingApply = null;
-    showStatus('Checking…', false);
+    showStatus('Checking…');
 
     Promise.all([settingsRead(), prepareRfc().catch(function (err) {
       return Promise.reject(err);
@@ -433,10 +469,10 @@
       var prep = results[1];
       var fp = RfcFingerprint.fingerprint(prep.items);
       if (recordStoreNote) {
-        showStatus('Note: duplicate-import detection is off — ' + recordStoreNote +
-          '. The import still runs; check the quantities before relying on them.', false);
+        showStatus('Note: duplicate-import detection is limited — ' + recordStoreNote +
+          '. The import still runs; check the quantities before relying on them.', 'warning');
       }
-      var dates = priorDates(record, fp);
+      var dates = refuseDates(record, fp);
       if (dates.length) {
         pendingApply = prep;
         showBlocked(dates);
@@ -447,7 +483,7 @@
         runBtn.disabled = false;
       });
     }).catch(function (err) {
-      showStatus(err && err.message ? err.message : String(err), true);
+      showStatus(err && err.message ? err.message : String(err), 'error');
       runBtn.disabled = false;
     });
   });
@@ -458,7 +494,7 @@
     pendingApply = null;
     overrideBtn.classList.add('hidden');
     runBtn.disabled = true;
-    showStatus('Checking…', false);
+    showStatus('Checking…');
     Promise.all([settingsRead(), Promise.resolve(prep)]).then(function (results) {
       var record = results[0];
       var fp = RfcFingerprint.fingerprint(prep.items);
@@ -466,7 +502,7 @@
     }).then(function () {
       runBtn.disabled = false;
     }).catch(function (err) {
-      showStatus(err && err.message ? err.message : String(err), true);
+      showStatus(err && err.message ? err.message : String(err), 'error');
       runBtn.disabled = false;
     });
   });
