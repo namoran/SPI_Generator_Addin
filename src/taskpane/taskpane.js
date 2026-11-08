@@ -178,20 +178,39 @@
 
   /* --- the record of imports (document settings) --- */
 
+  function emptyRecord() {
+    return { version: 1, applied: [] };
+  }
+
+  /* Set when this host cannot store the import record, with the reason.
+   * Imports still work, but duplicate-import detection is off, and the
+   * pane says so. */
+  var recordStoreNote = null;
+
   function settingsRead() {
     return new Promise(function (resolve) {
-      if (!Office.context.document ||
-          typeof Office.context.document.settings.getAsync !== 'function') {
-        resolve(null);
+      var settings = null;
+      try {
+        settings = Office.context.document.settings;
+      } catch (e) {
+        settings = null;
+      }
+      if (!settings || typeof settings.getAsync !== 'function') {
+        recordStoreNote = 'this host has no document settings to store the import record';
+        resolve(emptyRecord());
         return;
       }
-      Office.context.document.settings.getAsync(function (ar) {
+      settings.getAsync(function (ar) {
         var record = null;
-        if (ar && ar.status === Office.AsyncResultStatus.Succeeded && ar.value) {
+        var failed = !ar || ar.status !== Office.AsyncResultStatus.Succeeded;
+        if (!failed && ar.value) {
           try { record = JSON.parse(ar.value); } catch (e) { record = null; }
         }
-        if (!record || !Array.isArray(record.applied)) {
-          record = { version: 1, applied: [] };
+        if (failed && ar && ar.error && ar.error.message) {
+          recordStoreNote = 'the import record could not be read: ' + ar.error.message;
+        }
+        if (!record || typeof record !== 'object' || !Array.isArray(record.applied)) {
+          record = emptyRecord();
         }
         resolve(record);
       });
@@ -200,13 +219,23 @@
 
   function settingsWrite(record) {
     return new Promise(function (resolve, reject) {
-      Office.context.document.settings.setAsync(JSON.stringify(record), function (ar) {
+      var settings = null;
+      try {
+        settings = Office.context.document.settings;
+      } catch (e) {
+        settings = null;
+      }
+      if (!settings || typeof settings.setAsync !== 'function') {
+        reject(new Error(recordStoreNote || 'this host has no document settings to store the import record'));
+        return;
+      }
+      settings.setAsync(JSON.stringify(record), function (ar) {
         if (!ar || ar.status !== Office.AsyncResultStatus.Succeeded) {
           reject(new Error('the import record could not be saved to this workbook: ' +
             (ar && ar.error && ar.error.message ? ar.error.message : 'unknown error')));
           return;
         }
-        Office.context.document.settings.saveAsync(function (ar2) {
+        settings.saveAsync(function (ar2) {
           if (!ar2 || ar2.status !== Office.AsyncResultStatus.Succeeded) {
             reject(new Error('the import record could not be saved to this workbook: ' +
               (ar2 && ar2.error && ar2.error.message ? ar2.error.message : 'unknown error')));
@@ -219,7 +248,7 @@
   }
 
   function priorDates(record, fp) {
-    return record.applied.filter(function (e) { return e.hash === fp; })
+    return ((record && record.applied) || []).filter(function (e) { return e.hash === fp; })
       .map(function (e) { return e.date; });
   }
 
@@ -403,6 +432,10 @@
       var record = results[0];
       var prep = results[1];
       var fp = RfcFingerprint.fingerprint(prep.items);
+      if (recordStoreNote) {
+        showStatus('Note: duplicate-import detection is off — ' + recordStoreNote +
+          '. The import still runs; check the quantities before relying on them.', false);
+      }
       var dates = priorDates(record, fp);
       if (dates.length) {
         pendingApply = prep;
