@@ -191,6 +191,10 @@
     return {
       version: 1,
       description: 'Maintained by RFC Importer. Tracks imported RFC fingerprints and complete change history.',
+      publisher: 'Moran Rocks LLC',
+      contact: 'Nicholas Moran',
+      website: 'https://moran.rocks',
+      phone: '786-263-9185',
       applied: []
     };
   }
