@@ -34,6 +34,25 @@ label {
   margin: 14px 0 4px;
 }
 
+label.choice {
+  display: block;
+  font-weight: 400;
+  margin: 2px 0;
+}
+
+label.choice input {
+  margin-right: 6px;
+}
+
+label.choice.second {
+  margin-bottom: 10px;
+}
+
+#override {
+  background: #8a6d3b;
+  margin-left: 10px;
+}
+
 input[type="file"] {
   width: 100%;
 }

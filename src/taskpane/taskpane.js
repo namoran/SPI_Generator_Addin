@@ -1,29 +1,46 @@
-/* SPI Generator (Excel Office Add-in) — task pane wiring.
+/* RFC Importer (Excel Office Add-in) — task pane wiring.
  *
- * The user opens their SPI workbook in Excel and picks the RFC file here.
- * The RFC is parsed in the pane with SheetJS (rfc-sheetjs.js). The plan —
- * which cells change, and to what — comes from spi-core.js, the same
- * logic the web SPI Generator uses. The plan is then applied to the open
- * workbook with the Excel JavaScript API: each planned cell gets its new
- * quantity, and each row that received a value is unhidden. Nothing else
- * in the workbook is touched, and Excel recalculates the totals.
+ * The user opens their SPI workbook in Excel and picks the source of the
+ * RFC data in this pane: an RFC file, or the RFC worksheet inside the
+ * same workbook. The RFC lines are read through an adapter (SheetJS for
+ * a file; a values block read with the Excel API for the worksheet).
+ * The plan — which cells change, and to what — comes from spi-core.js,
+ * the same logic the web SPI Generator uses. The plan is then applied to
+ * the open workbook with the Excel JavaScript API: each planned cell
+ * gets its new quantity, and each row that received a value is
+ * unhidden. Nothing else in the workbook is touched, and Excel
+ * recalculates the totals.
  *
  * The plan is computed in full before anything is written, so an error
  * (a pay item missing from the SPI, a formula in a quantity cell, a
  * non-numeric quantity) leaves the workbook unchanged.
+ *
+ * Imports are idempotent: before any write, a fingerprint of the RFC's
+ * tasks, pay items, and quantities (rfc-fingerprint.js) is compared
+ * against the record of imports stored in the workbook's document
+ * settings. Matching data is refused — the import adds quantities, so
+ * applying the same data twice would double those cells — with an
+ * "Apply anyway" override for an identical change order re-imported on
+ * purpose.
  */
 (function () {
   'use strict';
 
-  var rfcAdapter = null;
+  var SETTINGS_KEY = 'RfcImporter.appliedRfcs';
+
+  var rfcAdapter = null;   // the picked RFC file, adapted
+  var pendingApply = null; // an RFC blocked as already imported, waiting on "Apply anyway"
 
   var fileInput = document.getElementById('rfc-file');
   var rfcInfo = document.getElementById('rfc-info');
   var runBtn = document.getElementById('generate');
+  var overrideBtn = document.getElementById('override');
   var statusEl = document.getElementById('status');
   var resultEl = document.getElementById('result');
   var summaryEl = document.getElementById('summary');
   var reportEl = document.getElementById('report');
+  var fileField = document.getElementById('file-field');
+  var sourceRadios = document.getElementsByName('rfc-source');
 
   Office.onReady(function (info) {
     if (info.host !== Office.HostType.Excel) {
@@ -50,6 +67,30 @@
       r.onerror = function () { reject(new Error('could not read ' + file.name)); };
       r.readAsArrayBuffer(file);
     });
+  }
+
+  function selectedSource() {
+    for (var i = 0; i < sourceRadios.length; i++) {
+      if (sourceRadios[i].checked) return sourceRadios[i].value;
+    }
+    return 'file';
+  }
+
+  for (var sr = 0; sr < sourceRadios.length; sr++) {
+    sourceRadios[sr].addEventListener('change', resetForSource);
+  }
+
+  function resetForSource() {
+    var sheet = selectedSource() === 'sheet';
+    fileField.classList.toggle('hidden', sheet);
+    rfcAdapter = null;
+    pendingApply = null;
+    overrideBtn.classList.add('hidden');
+    runBtn.disabled = sheet ? false : true; // the worksheet needs no pick to be ready
+    rfcInfo.classList.add('hidden');
+    rfcInfo.textContent = '';
+    resultEl.classList.add('hidden');
+    clearStatus();
   }
 
   fileInput.addEventListener('change', function () {
@@ -85,6 +126,150 @@
       showStatus(err && err.message ? err.message : String(err), true);
     });
   });
+
+  /* --- the RFC worksheet inside the open workbook --- */
+
+  /* A read-only sheet adapter over rows 22..111, columns A..I of the
+   * "RFC" worksheet in the open workbook, read with the Excel API in
+   * one sync. Values are read live at import time, so lines typed or
+   * pasted into the sheet — saved or not — are what gets imported. */
+  function buildSheetRfc(context) {
+    var sheets = context.workbook.worksheets;
+    sheets.load('items/name');
+    return context.sync().then(function () {
+      var names = sheets.items.map(function (s) { return s.name; });
+      if (names.indexOf(SpiCore.RFC_SHEET) === -1) {
+        throw SpiCore.missingSheetError('This workbook', SpiCore.RFC_SHEET, names);
+      }
+      var rows = SpiCore.RFC_LAST_ROW - SpiCore.RFC_FIRST_ROW + 1;
+      var rng = sheets.getItem(SpiCore.RFC_SHEET)
+        .getRangeByIndexes(SpiCore.RFC_FIRST_ROW - 1, 0, rows, 9);
+      rng.load('values');
+      return context.sync().then(function () {
+        return RfcGrid.fromMatrix(rng.values, SpiCore.RFC_FIRST_ROW);
+      });
+    });
+  }
+
+  /* The RFC ready to plan: { rfc, items, source, info }. */
+  function prepareRfc() {
+    if (selectedSource() === 'sheet') {
+      return Excel.run(function (context) {
+        return buildSheetRfc(context).then(function (adapter) {
+          var items = SpiCore.loadRfc(adapter);
+          if (!items.length) {
+            throw new Error('No RFC line items on the "RFC" worksheet in this ' +
+              'workbook (rows 22 to 111). Fill in the line items in that sheet, ' +
+              'or import an RFC file instead.');
+          }
+          return { rfc: adapter, items: items, source: 'RFC worksheet in this workbook',
+            info: 'RFC worksheet in this workbook — ' + items.length + ' RFC line' +
+              (items.length === 1 ? '' : 's') + ' found.' };
+        });
+      });
+    }
+    if (!rfcAdapter) {
+      return Promise.reject(new Error('Select an RFC file first.'));
+    }
+    var items = SpiCore.loadRfc(rfcAdapter);
+    return Promise.resolve({ rfc: rfcAdapter, items: items, source: 'RFC file',
+      info: rfcInfo.textContent });
+  }
+
+  /* --- the record of imports (document settings) --- */
+
+  function settingsRead() {
+    return new Promise(function (resolve) {
+      if (!Office.context.document ||
+          typeof Office.context.document.settings.getAsync !== 'function') {
+        resolve(null);
+        return;
+      }
+      Office.context.document.settings.getAsync(function (ar) {
+        var record = null;
+        if (ar && ar.status === Office.AsyncResultStatus.Succeeded && ar.value) {
+          try { record = JSON.parse(ar.value); } catch (e) { record = null; }
+        }
+        if (!record || !Array.isArray(record.applied)) {
+          record = { version: 1, applied: [] };
+        }
+        resolve(record);
+      });
+    });
+  }
+
+  function settingsWrite(record) {
+    return new Promise(function (resolve, reject) {
+      Office.context.document.settings.setAsync(JSON.stringify(record), function (ar) {
+        if (!ar || ar.status !== Office.AsyncResultStatus.Succeeded) {
+          reject(new Error('the import record could not be saved to this workbook: ' +
+            (ar && ar.error && ar.error.message ? ar.error.message : 'unknown error')));
+          return;
+        }
+        Office.context.document.settings.saveAsync(function (ar2) {
+          if (!ar2 || ar2.status !== Office.AsyncResultStatus.Succeeded) {
+            reject(new Error('the import record could not be saved to this workbook: ' +
+              (ar2 && ar2.error && ar2.error.message ? ar2.error.message : 'unknown error')));
+            return;
+          }
+          resolve();
+        });
+      });
+    });
+  }
+
+  function priorDates(record, fp) {
+    return record.applied.filter(function (e) { return e.hash === fp; })
+      .map(function (e) { return e.date; });
+  }
+
+  function isoDateOnly(iso) {
+    return String(iso).slice(0, 10);
+  }
+
+  /* --- blocking (already imported) and applying --- */
+
+  function showBlocked(dates) {
+    showStatus('This RFC appears to have identical tasks, pay items, and ' +
+      'quantities to a previously imported RFC' +
+      ' (imported ' + dates.map(isoDateOnly).join(', ') + '). ' +
+      'Nothing was changed — the matching task quantity cells in this workbook ' +
+      'already reflect these quantities.', true);
+    overrideBtn.classList.remove('hidden');
+  }
+
+  function applyRfc(prep, fp, record) {
+    showStatus('Importing…', false);
+    return generate(prep.rfc).then(function (changes) {
+      resultEl.classList.remove('hidden');
+      summaryEl.textContent = changes.length + ' cell' + (changes.length === 1 ? '' : 's') +
+        ' updated in the "SOW Units" sheet.';
+      reportEl.innerHTML = '';
+      SpiCore.report(changes).forEach(function (line) {
+        var li = document.createElement('li');
+        li.textContent = line;
+        reportEl.appendChild(li);
+      });
+
+      clearStatus();
+      rfcInfo.textContent = prep.info;
+      rfcInfo.classList.remove('hidden');
+
+      record.applied.push({
+        hash: fp,
+        date: new Date().toISOString(),
+        source: prep.source,
+        lines: prep.items.length
+      });
+      settingsWrite(record).catch(function (err) {
+        showStatus('Imported ' + changes.length + ' cell(s), but the import record ' +
+          'could not be saved to this workbook (' + err.message + '). ' +
+          'Re-importing the same RFC would not be detected.', true);
+      });
+    });
+  }
+
+  /* --- the Excel wiring (unchanged from the file-only version) --- */
 
   /* A cache of SOW Units cell values and formulas, filled from Excel in
    * blocks, behind the synchronous adapter spi-core.js plans against.
@@ -142,7 +327,7 @@
     }, Promise.resolve());
   }
 
-  function generate() {
+  function generate(rfcSheet) {
     return Excel.run(function (context) {
       var sheets = context.workbook.worksheets;
       sheets.load('items/name');
@@ -151,12 +336,12 @@
         if (names.indexOf(SpiCore.SOW_SHEET) === -1) {
           throw SpiCore.missingSheetError('The open workbook', SpiCore.SOW_SHEET, names);
         }
-        return applyPlan(context, sheets.getItem(SpiCore.SOW_SHEET));
+        return applyPlan(context, sheets.getItem(SpiCore.SOW_SHEET), rfcSheet);
       });
     });
   }
 
-  function applyPlan(context, sheet) {
+  function applyPlan(context, sheet, rfcSheet) {
     var used = sheet.getUsedRangeOrNullObject();
     used.load('rowCount,columnCount');
     return context.sync().then(function () {
@@ -190,7 +375,7 @@
           return loadBlock(context, sheet, cache, header.row + 1, maxRow, 1, 24);
         })
         .then(function () {
-          var changes = SpiCore.plan(rfcAdapter, adapter);
+          var changes = SpiCore.plan(rfcSheet, adapter);
 
           var rowsToUnhide = {};
           changes.forEach(function (ch) {
@@ -206,24 +391,49 @@
   }
 
   runBtn.addEventListener('click', function () {
-    if (!rfcAdapter) return;
     runBtn.disabled = true;
     resultEl.classList.add('hidden');
-    showStatus('Processing…', false);
-    generate().then(function (changes) {
-      clearStatus();
-      summaryEl.textContent = changes.length + ' cell' + (changes.length === 1 ? '' : 's') +
-        ' updated in the "SOW Units" sheet.';
-      reportEl.innerHTML = '';
-      SpiCore.report(changes).forEach(function (line) {
-        var li = document.createElement('li');
-        li.textContent = line;
-        reportEl.appendChild(li);
+    overrideBtn.classList.add('hidden');
+    pendingApply = null;
+    showStatus('Checking…', false);
+
+    Promise.all([settingsRead(), prepareRfc().catch(function (err) {
+      return Promise.reject(err);
+    })]).then(function (results) {
+      var record = results[0];
+      var prep = results[1];
+      var fp = RfcFingerprint.fingerprint(prep.items);
+      var dates = priorDates(record, fp);
+      if (dates.length) {
+        pendingApply = prep;
+        showBlocked(dates);
+        runBtn.disabled = false;
+        return;
+      }
+      return applyRfc(prep, fp, record).then(function () {
+        runBtn.disabled = false;
       });
-      resultEl.classList.remove('hidden');
     }).catch(function (err) {
       showStatus(err && err.message ? err.message : String(err), true);
+      runBtn.disabled = false;
+    });
+  });
+
+  overrideBtn.addEventListener('click', function () {
+    if (!pendingApply) return;
+    var prep = pendingApply;
+    pendingApply = null;
+    overrideBtn.classList.add('hidden');
+    runBtn.disabled = true;
+    showStatus('Checking…', false);
+    Promise.all([settingsRead(), Promise.resolve(prep)]).then(function (results) {
+      var record = results[0];
+      var fp = RfcFingerprint.fingerprint(prep.items);
+      return applyRfc(prep, fp, record);
     }).then(function () {
+      runBtn.disabled = false;
+    }).catch(function (err) {
+      showStatus(err && err.message ? err.message : String(err), true);
       runBtn.disabled = false;
     });
   });
