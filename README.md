@@ -151,3 +151,7 @@ The web SPI Generator stays as it is; this project does not modify it.
 The logic port is one-way: `spi-core.js` was ported from the web tool's
 `logic.js` on 2026-11-03. If the web tool's logic changes, the port and
 this test need the same change.
+
+## Contact
+
+Nicholas Moran · Moran Rocks LLC · https://moran.rocks · 786-263-9185
