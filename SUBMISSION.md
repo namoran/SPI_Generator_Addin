@@ -20,7 +20,14 @@ Registration is outlined step by step below.
 - Registering a Partner Center developer account currently carries no
   fee, for individual or company accounts, per Microsoft Learn
   (Microsoft's current sign-up flow). Submitting a free add-in costs
-  nothing.
+  nothing. Tenant creation asks for a payment method, but that results
+  in no charge at sign-up; charges apply only when a purchase is made.
+- Marketplace enrollment requires a Microsoft Entra work account.
+  Personal Microsoft accounts (Outlook.com / Hotmail / Live.com) are
+  not supported for Marketplace publisher enrollment (confirmed by
+  Microsoft Q&A, January 2026). Moran Rocks LLC must therefore enroll
+  under a work account — an existing tenant, or a new tenant created
+  in the enrollment flow (see the walkthrough below).
 - Marketplace publishing uses a company account. Moran Rocks LLC is the
   publisher name in the manifest.
 - After certification, code updates pushed to GitHub Pages reach users
@@ -79,9 +86,14 @@ screen wording may vary slightly.
 
 - A Microsoft Entra **work account** in the tenant your organization
   uses for Partner Center (a personal Microsoft account alone does
-  not meet the prerequisite). The user who starts MAICPP enrollment
+  not meet the prerequisite — personal accounts are unsupported for
+  Marketplace enrollment). The user who starts MAICPP enrollment
   needs the Global admin tenant role; you sign on as Nicholas Moran
-  (786-263-9185, moran.rocks).
+  (786-263-9185, moran.rocks). If Moran Rocks LLC has no tenant yet,
+  create one in the enrollment flow: it is free, a payment method is
+  collected with no charge at sign-up (charges only if you buy
+  something later), and this is the supported path for a company
+  without an existing tenant.
 - Authority to accept legal agreements on behalf of the LLC.
 - Registered legal business name, address, country/region, and primary
   contact information.
