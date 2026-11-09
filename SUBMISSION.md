@@ -1,12 +1,15 @@
 # Office Store (AppSource) submission — RFC Importer
 
-State as of 2026-11-07: the v1.0 listing has not been submitted; the
-add-in is built and its logic is tested against the web SPI Generator
-(see README.md, Tests). Version 1.1.0.0 renamed the add-in from "SPI
-Generator" to "RFC Importer", added the RFC-worksheet-in-this-workbook
-source and the idempotent-import fingerprint guard, and is a manifest
-change. The steps below are the remaining ones, and they are Nicholas's
-to do — they need his Microsoft account and his GitHub account.
+State as of 2026-11-09: the v1.0 listing has not been submitted; the
+add-in is built and tested live in Excel on the web (pane build 109,
+GitHub Pages). GitHub repository `namoran/SPI_Generator_Addin` exists
+with Pages serving the root of `main`, and the pane URLs below are
+live. Version 1.1.0.0 renamed the add-in from "SPI Generator" to "RFC
+Importer", added the RFC-worksheet-in-this-workbook source and the
+idempotent-import fingerprint guard, and is a manifest change. Steps 1–2
+in the checklist are done except for taking the listing screenshots.
+What remains is Nicholas's to do — it needs his Microsoft account.
+Registration is outlined step by step below.
 
 ## Facts confirmed 2026-11-03
 
@@ -28,24 +31,21 @@ to do — they need his Microsoft account and his GitHub account.
 
 ## Checklist — Nicholas only
 
-1. **Create the GitHub repository.** Create `SPI_Generator_Addin` under
-   the `namoran` account (the Muse GitHub App cannot create
-   repositories). Push this project to it as-is, project root at the
-   repository root. In the repository settings, enable GitHub Pages
-   serving the root of the default branch. Confirm
-   https://namoran.github.io/SPI_Generator_Addin/ loads the landing
-   page and https://namoran.github.io/SPI_Generator_Addin/src/taskpane/taskpane.html
-   loads the pane.
-2. **Sideload the production manifest once.** In Excel: Insert →
-   Add-ins → Upload My Add-in → `manifest.xml`. Run it against a real
-   RFC/SPI pair and confirm the quantities land correctly. Take the
-   screenshots listed below during this run.
-3. **Create the Partner Center account.** Sign up at Partner Center as a
-   company account for Moran Rocks LLC and complete the verification
-   Microsoft asks for. No fee at registration under the current flow.
+1. ~~**Create the GitHub repository.**~~ DONE. `SPI_Generator_Addin`
+   exists under the `namoran` account; Pages serves the root of `main`.
+   Confirmed live: https://namoran.github.io/SPI_Generator_Addin/ and
+   https://namoran.github.io/SPI_Generator_Addin/src/taskpane/taskpane.html
+   (pane build 109).
+2. ~~**Sideload the production manifest once.**~~ DONE in Excel on the
+   web (same browser pane the listing uses). One item remains: **take
+   the screenshots** listed below (PNG, 1366 × 768 or larger).
+3. **Create the Partner Center account.** See the registration walkthrough
+   below. No fee for a free add-in; a payout/tax profile is only needed
+   if the add-in charges.
 4. **Create the listing.** In Partner Center, create an Office Add-in
-   offer, upload `manifest.xml`, and fill in the listing from the text
-   below. Use these URLs:
+   offer under the **Microsoft 365 and Copilot** tab, upload
+   `manifest.xml`, and fill in the listing from the text below. Use
+   these URLs:
    - Privacy policy: https://namoran.github.io/SPI_Generator_Addin/src/legal/privacy.html
    - Terms of use: https://namoran.github.io/SPI_Generator_Addin/src/legal/terms.html
    - Support: https://moran.rocks
@@ -64,6 +64,71 @@ to do — they need his Microsoft account and his GitHub account.
    report in Partner Center says what to fix; fix and resubmit. After
    certification passes, the listing typically appears in the
    marketplace and in Excel's add-in store within about an hour.
+
+## Registration walkthrough (current Partner Center flow, 2026-11)
+
+To publish an Office Add-in, Moran Rocks LLC enrolls once in Partner
+Center; the Microsoft AI Cloud Partner Program (MAICPP) enrollment is
+created as part of that same flow. The **Microsoft 365 and Copilot**
+program is the one for Office Add-ins (not Commercial Marketplace,
+which is for Marketplace offers). Steps below follow the current
+[enrollment article](https://learn.microsoft.com/en-us/partner-center/account-settings/create-account);
+screen wording may vary slightly.
+
+### Have ready before you start
+
+- A Microsoft Entra **work account** in the tenant your organization
+  uses for Partner Center (a personal Microsoft account alone does
+  not meet the prerequisite). The user who starts MAICPP enrollment
+  needs the Global admin tenant role; you sign on as Nicholas Moran
+  (786-263-9185, moran.rocks).
+- Authority to accept legal agreements on behalf of the LLC.
+- Registered legal business name, address, country/region, and primary
+  contact information.
+- A business registration number (Moran Rocks LLC's Florida record is
+  L23000516677, Active — confirm it at Sunbiz before entering).
+- Business registration and domain-ownership documents for
+  verification (have the Sunbiz certificate of status and proof that
+  moran.rocks is owned at hand).
+- Publisher name **Moran Rocks LLC** (must match the `ProviderName`
+  in `manifest.xml`) and a unique Publisher ID — try `moranrocksllc`
+  first; if that ID is taken, the form's validation rules show what is
+  allowed.
+
+### Click path
+
+1. Open [Partner Center](https://go.microsoft.com/fwlink/?linkid=2165507),
+   select **Build**, then **Next**.
+2. Select **Login with work account** and sign in with the work
+   account. If there is no work account yet, create one first
+   (linked from the enrollment flow), then return.
+3. Confirm company, country or region, signed-in account, and tenant.
+4. On the program selection page, select **Microsoft 365 and
+   copilot**, then **Next**.
+5. Select the legal entity or billing account for the business.
+6. Review the legal business and primary contact information; enter
+   the business registration number when asked.
+7. Enter the Publisher name (**Moran Rocks LLC**).
+8. Review the **Office Publisher Agreement** and **Microsoft AI Cloud
+   Partner Program Agreement**, accept, and select **Enroll**.
+9. Complete verification from the **Verification Summary** page
+   (email/identity/business checks). Verification usually takes
+   **three to five business days** and can take longer with extra
+   review.
+10. Confirm enrollment under **Account settings > Programs**, and the
+    publisher under **Account settings > Organization profile >
+    Identifiers > Publisher**. Then use the account picker to select
+    that Seller ID (the seller context) before opening
+    **Marketplace offers > Microsoft 365 and Copilot** and starting
+    the offer.
+
+### What it costs and what it does not
+
+- Registration and submitting a free add-in cost nothing under the
+  current flow. No payout/tax setup is needed unless the add-in charges.
+- Creating a work account or submitting the enrollment request does
+  **not** complete verification — MAICPP enrollment becomes active
+  only after verification inputs are submitted and authorized.
 
 ## Screenshots to take (step 2, in Excel, PNG, 1366 × 768 or larger)
 
