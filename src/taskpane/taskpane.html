@@ -7,10 +7,10 @@
   <title>RFC Importer</title>
   <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script type="text/javascript" src="xlsx.full.min.js"></script>
-  <script type="text/javascript" src="spi-core.js?v=107"></script>
-  <script type="text/javascript" src="rfc-grid.js?v=107"></script>
-  <script type="text/javascript" src="rfc-fingerprint.js?v=107"></script>
-  <script type="text/javascript" src="rfc-sheetjs.js?v=107"></script>
+  <script type="text/javascript" src="spi-core.js?v=108"></script>
+  <script type="text/javascript" src="rfc-grid.js?v=108"></script>
+  <script type="text/javascript" src="rfc-fingerprint.js?v=108"></script>
+  <script type="text/javascript" src="rfc-sheetjs.js?v=108"></script>
   <link rel="stylesheet" type="text/css" href="taskpane.css" />
 </head>
 <body>
@@ -43,6 +43,10 @@
       <p id="rfc-info" class="info hidden"></p>
     </div>
 
+    <label for="import-note">Import note (optional)</label>
+    <input type="text" id="import-note" maxlength="200"
+      placeholder="e.g. RFC #2 approved by FDEP" autocomplete="off" />
+
     <button id="generate" type="button" disabled="disabled">Import</button>
 
     <div id="status" class="hidden" role="status"></div>
@@ -58,7 +62,7 @@
     <p>Moran Rocks LLC · Nicholas Moran ·
       <a href="https://moran.rocks">moran.rocks</a> · 786-263-9185</p>
     <p>The RFC data is read in Excel on this computer. Nothing is uploaded.</p>
-    <p id="build-note">v1.1 · pane build 107</p>
+    <p id="build-note">v1.1 · pane build 108</p>
   </footer>
 
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -72,6 +76,6 @@
     </div>
   </div>
 
-  <script type="text/javascript" src="taskpane.js?v=107"></script>
+  <script type="text/javascript" src="taskpane.js?v=108"></script>
 </body>
 </html>

@@ -98,6 +98,14 @@ input[type="file"] {
   width: 100%;
 }
 
+#import-note {
+  width: 100%;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  font-size: 14px;
+  font-family: inherit;
+}
+
 button {
   margin-top: 16px;
   padding: 8px 20px;

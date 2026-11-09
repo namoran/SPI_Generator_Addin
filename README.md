@@ -43,6 +43,13 @@ without saving keeps neither. The fingerprint is order- and
 whitespace-insensitive, so re-entering the same lines in a different
 order still matches.
 
+An optional **Import note** (the "Import note (optional)" field in the
+pane) is saved in each import's record entry, alongside the fingerprint,
+date, source, line count, and a complete change log of every cell the
+import touched. If the same RFC is imported again, the refusal message
+quotes the notes saved on those previous imports, so the audit trail
+carries context (e.g. "RFC #2 approved by FDEP").
+
 The record is stored in the workbook's **custom document properties**,
 through the Excel JavaScript API (`ExcelApi 1.7`) — the same API the
 add-in uses to write the SOW Units cells. The properties are invisible,

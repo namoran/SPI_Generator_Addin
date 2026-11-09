@@ -48,6 +48,7 @@
   var resultEl = document.getElementById('result');
   var summaryEl = document.getElementById('summary');
   var reportEl = document.getElementById('report');
+  var noteEl = document.getElementById('import-note');
   var fileField = document.getElementById('file-field');
   var sourceRadios = document.getElementsByName('rfc-source');
 
@@ -409,6 +410,32 @@
     return parts;
   }
 
+  /* Notes saved on previous imports of the same fingerprint, newest
+   * first, so the refusal modal can remind the user what those earlier
+   * imports were for. */
+  function priorComments(record, fp) {
+    var out = [];
+    var seen = {};
+    var push = function (list) {
+      (list || []).forEach(function (e) {
+        if (e && e.hash === fp && e.comment && !seen[e.comment]) {
+          seen[e.comment] = true;
+          out.push(e.comment);
+        }
+      });
+    };
+    push(sessionApplied);
+    push(record && record.applied);
+    out.reverse();
+    return out;
+  }
+
+  /* The note text in the pane, trimmed and capped, for this import. */
+  function currentNote() {
+    if (!noteEl) return '';
+    return String(noteEl.value || '').trim().slice(0, 200);
+  }
+
   function isoDateOnly(iso) {
     return String(iso).slice(0, 10);
   }
@@ -422,9 +449,11 @@
   /* The refusal is a modal, not a status line: the blocker deserves the
    * user's full attention, and the "Apply anyway" decision sits right
    * with it. */
-  function showBlocked(dates) {
+  function showBlocked(dates, comments) {
+    var note = (comments || []).map(function (c) { return '"' + c + '"'; }).join(', ');
     modalText.textContent = 'This RFC appears to have identical tasks, pay items, and ' +
-      'quantities to a previously imported RFC (imported ' + dates.join(', ') + '). ' +
+      'quantities to a previously imported RFC (imported ' + dates.join(', ') +
+      (note ? ' — note: ' + note : '') + '). ' +
       'Nothing was changed — the matching task quantity cells in this workbook ' +
       'already reflect these quantities.';
     modalEl.classList.remove('hidden');
@@ -448,6 +477,7 @@
       rfcInfo.textContent = prep.info;
       rfcInfo.classList.remove('hidden');
 
+      var comment = currentNote();
       var entry = {
         hash: fp,
         date: new Date().toISOString(),
@@ -465,8 +495,10 @@
           };
         })
       };
+      if (comment) entry.comment = comment;
       sessionApplied.push(entry);
       record.applied.push(entry);
+      if (comment && noteEl) noteEl.value = '';
       writeRecord(record).catch(function (err) {
         showStatus('Imported ' + changes.length + ' cell(s). Note: duplicate-import detection ' +
           'for reopening and other workbooks is limited in this host — ' +
@@ -613,7 +645,7 @@
       var dates = refuseDates(record, fp);
       if (dates.length) {
         pendingApply = prep;
-        showBlocked(dates);
+        showBlocked(dates, priorComments(record, fp));
         runBtn.disabled = false;
         return;
       }
