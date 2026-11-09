@@ -128,8 +128,9 @@
           ' (sheet "RFC", rows 22 to 111).');
       }
       rfcAdapter = adapter;
+      var justification = rfcJustification(adapter);
       rfcInfo.textContent = file.name + ' — ' + items.length + ' RFC line' +
-        (items.length === 1 ? '' : 's') + ' found.';
+        (items.length === 1 ? '' : 's') + ' found.' + justificationHint(justification);
       rfcInfo.classList.remove('hidden');
       runBtn.disabled = false;
     }).catch(function (err) {
@@ -139,10 +140,42 @@
 
   /* --- the RFC worksheet inside the open workbook --- */
 
-  /* A read-only sheet adapter over rows 22..111, columns A..I of the
+  /* Cell A9 of the RFC sheet carries the description of change and
+   * justification. Read from the same RFC snapshot as the line items;
+   * used when the pane field is left blank. */
+  var JUSTIFICATION_ROW = 9;   /* A9 */
+  var JUSTIFICATION_COL = 1;
+  var JUSTIFICATION_MAX = 500;
+  var MANUAL_MAX = 200;
+
+  function normalizeJustification(v, max) {
+    if (v === null || v === undefined) return '';
+    return String(v).trim().replace(/\s+/g, ' ').slice(0, max);
+  }
+
+  function rfcJustification(adapter) {
+    try {
+      return normalizeJustification(adapter.value(JUSTIFICATION_ROW, JUSTIFICATION_COL),
+        JUSTIFICATION_MAX);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /* Short hint of the A9 text for the info lines, so the user can see
+   * what will be saved when they leave the field blank. */
+  function justificationHint(justification) {
+    if (!justification) return '';
+    var short = justification.length > 80 ? justification.slice(0, 77) + '…' : justification;
+    return ' Description in A9: \u201c' + short + '\u201d (used if the field is blank).';
+  }
+
+  /* A read-only sheet adapter over rows 9..111, columns A..I of the
    * "RFC" worksheet in the open workbook, read with the Excel API in
-   * one sync. Values are read live at import time, so lines typed or
-   * pasted into the sheet — saved or not — are what gets imported. */
+   * one sync: row 9 carries the description of change and
+   * justification, rows 22..111 the line items. Values are read live
+   * at import time, so lines typed or pasted into the sheet — saved
+   * or not — are what gets imported. */
   function buildSheetRfc(context) {
     var sheets = context.workbook.worksheets;
     sheets.load('items/name');
@@ -151,17 +184,17 @@
       if (names.indexOf(SpiCore.RFC_SHEET) === -1) {
         throw SpiCore.missingSheetError('This workbook', SpiCore.RFC_SHEET, names);
       }
-      var rows = SpiCore.RFC_LAST_ROW - SpiCore.RFC_FIRST_ROW + 1;
+      var rows = SpiCore.RFC_LAST_ROW - JUSTIFICATION_ROW + 1;
       var rng = sheets.getItem(SpiCore.RFC_SHEET)
-        .getRangeByIndexes(SpiCore.RFC_FIRST_ROW - 1, 0, rows, 9);
+        .getRangeByIndexes(JUSTIFICATION_ROW - 1, 0, rows, 9);
       rng.load('values');
       return context.sync().then(function () {
-        return RfcGrid.fromMatrix(rng.values, SpiCore.RFC_FIRST_ROW);
+        return RfcGrid.fromMatrix(rng.values, JUSTIFICATION_ROW);
       });
     });
   }
 
-  /* The RFC ready to plan: { rfc, items, source, info }. */
+  /* The RFC ready to plan: { rfc, items, source, info, justification }. */
   function prepareRfc() {
     if (selectedSource() === 'sheet') {
       return Excel.run(function (context) {
@@ -172,9 +205,11 @@
               'workbook (rows 22 to 111). Fill in the line items in that sheet, ' +
               'or import an RFC file instead.');
           }
+          var justification = rfcJustification(adapter);
           return { rfc: adapter, items: items, source: 'RFC worksheet in this workbook',
             info: 'RFC worksheet in this workbook — ' + items.length + ' RFC line' +
-              (items.length === 1 ? '' : 's') + ' found.' };
+              (items.length === 1 ? '' : 's') + ' found.' + justificationHint(justification),
+            justification: justification };
         });
       });
     }
@@ -183,7 +218,7 @@
     }
     var items = SpiCore.loadRfc(rfcAdapter);
     return Promise.resolve({ rfc: rfcAdapter, items: items, source: 'RFC file',
-      info: rfcInfo.textContent });
+      info: rfcInfo.textContent, justification: rfcJustification(rfcAdapter) });
   }
 
   /* --- the record of imports --- */
@@ -280,7 +315,9 @@
           seen[k] = true;
           var entry = { hash: String(e.hash), date: String(e.date || ''),
             source: String(e.source || ''), lines: Number(e.lines) || 0 };
-          if (e.comment) entry.comment = String(e.comment);
+          if (e.justification || e.comment) {
+            entry.justification = String(e.justification || e.comment);
+          }
           if (Array.isArray(e.changes)) {
             entry.changes = e.changes.map(function (c) {
               return {
@@ -410,17 +447,19 @@
     return parts;
   }
 
-  /* Notes saved on previous imports of the same fingerprint, newest
-   * first, so the refusal modal can remind the user what those earlier
-   * imports were for. */
-  function priorComments(record, fp) {
+  /* Descriptions saved on previous imports of the same fingerprint,
+   * newest first, so the refusal modal can remind the user what those
+   * earlier imports were for. Older entries stored the text under
+   * `comment`; those are read too. */
+  function priorJustifications(record, fp) {
     var out = [];
     var seen = {};
     var push = function (list) {
       (list || []).forEach(function (e) {
-        if (e && e.hash === fp && e.comment && !seen[e.comment]) {
-          seen[e.comment] = true;
-          out.push(e.comment);
+        var text = e && (e.justification || e.comment);
+        if (e && e.hash === fp && text && !seen[text]) {
+          seen[text] = true;
+          out.push(String(text));
         }
       });
     };
@@ -430,10 +469,11 @@
     return out;
   }
 
-  /* The note text in the pane, trimmed and capped, for this import. */
-  function currentNote() {
+  /* The description typed into the pane, trimmed and capped, for this
+   * import. Takes precedence over the RFC's A9 text. */
+  function currentManualJustification() {
     if (!noteEl) return '';
-    return String(noteEl.value || '').trim().slice(0, 200);
+    return normalizeJustification(noteEl.value, MANUAL_MAX);
   }
 
   function isoDateOnly(iso) {
@@ -449,11 +489,11 @@
   /* The refusal is a modal, not a status line: the blocker deserves the
    * user's full attention, and the "Apply anyway" decision sits right
    * with it. */
-  function showBlocked(dates, comments) {
-    var note = (comments || []).map(function (c) { return '"' + c + '"'; }).join(', ');
+  function showBlocked(dates, justifications) {
+    var description = (justifications || []).map(function (j) { return '\u201c' + j + '\u201d'; }).join(', ');
     modalText.textContent = 'This RFC appears to have identical tasks, pay items, and ' +
       'quantities to a previously imported RFC (imported ' + dates.join(', ') +
-      (note ? ' — note: ' + note : '') + '). ' +
+      (description ? ' — description: ' + description : '') + '). ' +
       'Nothing was changed — the matching task quantity cells in this workbook ' +
       'already reflect these quantities.';
     modalEl.classList.remove('hidden');
@@ -477,7 +517,8 @@
       rfcInfo.textContent = prep.info;
       rfcInfo.classList.remove('hidden');
 
-      var comment = currentNote();
+      var manual = currentManualJustification();
+      var justification = manual || (prep.justification || '');
       var entry = {
         hash: fp,
         date: new Date().toISOString(),
@@ -495,10 +536,10 @@
           };
         })
       };
-      if (comment) entry.comment = comment;
+      if (justification) entry.justification = justification;
       sessionApplied.push(entry);
       record.applied.push(entry);
-      if (comment && noteEl) noteEl.value = '';
+      if (manual && noteEl) noteEl.value = '';
       writeRecord(record).catch(function (err) {
         showStatus('Imported ' + changes.length + ' cell(s). Note: duplicate-import detection ' +
           'for reopening and other workbooks is limited in this host — ' +
@@ -645,7 +686,7 @@
       var dates = refuseDates(record, fp);
       if (dates.length) {
         pendingApply = prep;
-        showBlocked(dates, priorComments(record, fp));
+        showBlocked(dates, priorJustifications(record, fp));
         runBtn.disabled = false;
         return;
       }
